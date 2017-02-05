@@ -11,8 +11,27 @@ import (
 	"time"
 
 	"taskdev/logging"
-	"taskdev/proto"
 )
+
+// TaskHandler represents the businiess handler
+type TaskHandler func(*Message) (*Message, error)
+
+// ClientInfo the client Info
+type ClientInfo struct {
+	Name    string
+	Handler map[int32]TaskHandler
+
+	Type string
+	Host string
+	OS   string
+	ARCH string
+	IP   []string
+}
+
+// ClientHook the real client interface
+type ClientHook interface {
+	HookInfo() *ClientInfo
+}
 
 type scheMsg struct {
 	command int64
@@ -43,11 +62,10 @@ type Client struct {
 	cmdChan  chan string
 	exitChan chan struct{}
 
-	handler map[int32]TaskHandler
-}
+	clientInfo *ClientInfo
 
-// TaskHandler represents the businiess handler
-type TaskHandler func(*proto.Proto) (*proto.Proto, error)
+	status int32
+}
 
 const (
 	statusInited = iota
@@ -77,9 +95,9 @@ END:
 
 func (m *Client) scheConnect() error {
 	m.Log.Info("connect to scheduler, addr = %s\n", m.Host)
-	conn, err := net.DialTimeout("tcp", m.Host, time.Duration(60))
+	conn, err := net.DialTimeout("tcp", m.Host, time.Second*60)
 	if err != nil {
-		m.Log.Error("connect to scheduler failed, add = %s, err=%s\n",
+		m.Log.Error("connect to scheduler failed, addr = %s, err=%s\n",
 			m.Host, err)
 		return err
 	}
@@ -285,8 +303,6 @@ func (m *Client) InitClient() {
 	m.cmdChan = make(chan string, 1024)
 	m.exitChan = make(chan struct{})
 
-	m.handler = make(map[int32]TaskHandler)
-
 	go m.sigTask()
 
 	m.Log.Info("start task go routine\n")
@@ -311,21 +327,9 @@ func (m *Client) Wait() {
 	<-m.exitChan
 }
 
-// SetHandler adds the command handler
-func (m *Client) SetHandler(cmd int32, handler TaskHandler) {
-	if handler == nil {
-		if _, ok := m.handler[cmd]; ok {
-			delete(m.handler, cmd)
-		}
-		return
+// SetHook adds the command handler
+func (m *Client) SetHook(hook ClientHook) {
+	if hook != nil {
+		m.clientInfo = hook.HookInfo()
 	}
-	m.handler[cmd] = handler
-}
-
-func (m *Client) SetInfo() {
-
-}
-
-func (m *Client) SendPacket(p *proto.Proto) {
-
 }

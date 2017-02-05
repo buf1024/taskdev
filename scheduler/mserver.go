@@ -74,38 +74,6 @@ END:
 	}
 }
 
-func (m *Server) scheConnect() error {
-	m.Log.Info("connect to scheduler, addr = %s\n", m.Host)
-	conn, err := net.DialTimeout("tcp", m.Host, time.Duration(60))
-	if err != nil {
-		m.Log.Error("connect to scheduler failed, add = %s, err=%s\n",
-			m.Host, err)
-		return err
-	}
-
-	(conn).(*net.TCPConn).SetNoDelay(true)
-	(conn).(*net.TCPConn).SetKeepAlive(true)
-
-	// m.sche.conn = conn.(*net.TCPConn)
-	// m.sche.conStatus = true
-	// m.sche.regStatus = false
-
-	// if m.sche.recvChan != nil {
-	// 	close(m.sche.recvChan)
-	// }
-	// if m.sche.sendChan != nil {
-	// 	close(m.sche.sendChan)
-	// }
-
-	// m.sche.recvChan = make(chan *scheMsg, 1024)
-	// m.sche.sendChan = make(chan *scheMsg, 1024)
-
-	go m.scheHandleMsg()
-
-	m.Log.Info("scheduler connected\n")
-
-	return nil
-}
 func (m *Server) scheRegister() error {
 	// reg packet
 	// m.Log.Info("reg to exch\n")
@@ -146,8 +114,25 @@ func (m *Server) timerOnce(to int64, typ string, ch interface{}, cmd interface{}
 	}
 }
 
-func (m *Server) handleConn(client *clientConn) {
+func (m *Server) handleConnRead(client *clientConn) {
+	for {
+		// read package
+		// client.conn.Read
+	}
+}
 
+func (m *Server) handleConnWrite(client *clientConn) {
+	for {
+		select {
+		case msg := <-client.sendChan:
+			// send msg
+		}
+	}
+}
+
+func (m *Server) handleConn(client *clientConn) {
+	go m.handleConnRead(client)
+	go m.handleConnWrite(client)
 }
 
 func (m *Server) listening() {
@@ -197,7 +182,7 @@ func (m *Server) cmdTask() {
 					m.Log.Critical("listen failed, err = %s\n", err)
 					m.Stop()
 				} else {
-					m.Log.Info("listen success, waiting for connection")
+					m.Log.Info("listen success, waiting for connection\n")
 				}
 			}
 		case "stop":
@@ -267,7 +252,7 @@ func (m *Server) initLog(prefix string) (err error) {
 
 // parseArgs parse the commandline arguments
 func (m *Server) parseArgs() {
-	host := flag.String("l", ":4421", "the scheduler server listen address")
+	host := flag.String("l", "127.0.0.1:4421", "the scheduler server listen address")
 	debug := flag.Bool("d", false, "run in debug model")
 	help := flag.Bool("h", false, "show the help message")
 
@@ -323,7 +308,9 @@ func (m *Server) InitServer() {
 // ServerForever the client
 func (m *Server) ServerForever() {
 
-	m.cmdChan <- "connect"
+	m.cmdChan <- "listen"
+
+	m.Wait()
 }
 
 // Stop the client

@@ -1,9 +1,9 @@
 bindir=bin
 exe=builder runner scheduler
 
-builder_go=builder/builder.go
-runner_go=runner/runner.go
-scheduler_go=scheduler/scheduler.go
+builder_go=builder/*.go
+runner_go=runner/*.go
+scheduler_go=scheduler/*.go
 
 all:$(exe)
 

@@ -34,6 +34,9 @@ func (b *builder) builderInit() {
 
 }
 
+func (b *builder) HookInfo() *util.ClientInfo {
+	return nil
+}
 func newBuilder() *builder {
 	b := &builder{}
 	return b
