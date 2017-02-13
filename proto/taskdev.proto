@@ -1,0 +1,25 @@
+package proto;
+
+// 心跳请求 0x00010001
+message HeartBeatReq{
+  required string SID = 1;
+}
+// 心跳回应 0x00010002
+message HeartBeatRsp{
+  required string SID = 1;
+}
+
+// 注册请求 0x00010003
+message RegisterReq{
+  required string SID = 1;
+  required string Type = 2;
+  required string OS = 3;
+  required string Arch = 4;
+  required string Host = 5;
+  repeated string Adress = 6;
+}
+// 注册回应 0x00010004
+message RegisterRsp{
+  required int32 RetCode = 1;
+  required string SID = 2;
+}

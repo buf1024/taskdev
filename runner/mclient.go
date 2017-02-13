@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"flag"
@@ -13,31 +13,48 @@ import (
 	"taskdev/logging"
 )
 
+// TaskHandler represents the businiess handler
+type TaskHandler func(*Message) (*Message, error)
+
+// ClientInfo the client Info
+type ClientInfo struct {
+	Name    string
+	Handler map[uint32]TaskHandler
+
+	Type string
+	Host string
+	OS   string
+	ARCH string
+	IP   []string
+}
+
+// ClientHook the real client interface
+type ClientHook interface {
+	HookInfo() *ClientInfo
+}
+
 type scheMsg struct {
 	command int64
 	message []byte
 }
 
-type clientConn struct {
+type scheConn struct {
 	conn      *net.TCPConn
 	conStatus bool
 	regStatus bool
 
 	recvChan chan *scheMsg
 	sendChan chan *scheMsg
-
-	uptime int64
 }
 
-// Server represents the the client connect to scheduler
-type Server struct {
+// Client represents the the client connect to scheduler
+type Client struct {
 	Host  string
 	Debug bool
 	Dir   string
 
-	listen *net.TCPListener
-
-	Log *logging.Log
+	Log  *logging.Log
+	sche scheConn
 
 	sessChan  chan struct{}
 	timerChan chan struct{}
@@ -45,27 +62,24 @@ type Server struct {
 	cmdChan  chan string
 	exitChan chan struct{}
 
-	clientQueue []*clientConn
+	info *ClientInfo
+
+	status int32
 }
 
-const (
-	statusInited = iota
-	statusStarted
-	statusReady
-	statusStoped
-)
-
-func (m *Server) scheHandleMsg() {
+func (m *Client) scheHandleRecv() {
+	for {
+		// tcp receive
+	}
+}
+func (m *Client) scheHandleSend() {
 END:
 	for {
 		select {
-		// case msg := <-m.exch.recvChan:
-		// 	{
-		// 	}
-		// case msg := <-m.exch.sendChan:
-		// 	{
-
-		// 	}
+		case /*msg*/ <-m.sche.sendChan:
+			{
+				// 发送
+			}
 		default:
 			// chan close
 			break END
@@ -74,7 +88,44 @@ END:
 	}
 }
 
-func (m *Server) scheRegister() error {
+func (m *Client) scheHandleMsg() {
+	go m.scheHandleRecv()
+	go m.scheHandleSend()
+}
+
+func (m *Client) scheConnect() error {
+	m.Log.Info("connect to scheduler, addr = %s\n", m.Host)
+	conn, err := net.DialTimeout("tcp", m.Host, time.Second*60)
+	if err != nil {
+		m.Log.Error("connect to scheduler failed, addr = %s, err=%s\n",
+			m.Host, err)
+		return err
+	}
+
+	(conn).(*net.TCPConn).SetNoDelay(true)
+	(conn).(*net.TCPConn).SetKeepAlive(true)
+
+	m.sche.conn = conn.(*net.TCPConn)
+	m.sche.conStatus = true
+	m.sche.regStatus = false
+
+	if m.sche.recvChan != nil {
+		close(m.sche.recvChan)
+	}
+	if m.sche.sendChan != nil {
+		close(m.sche.sendChan)
+	}
+
+	m.sche.recvChan = make(chan *scheMsg, 1024)
+	m.sche.sendChan = make(chan *scheMsg, 1024)
+
+	m.scheHandleMsg()
+
+	m.Log.Info("scheduler connected\n")
+
+	return nil
+}
+func (m *Client) scheRegister() error {
 	// reg packet
 	// m.Log.Info("reg to exch\n")
 	// msg, err := proto.Message(proto.CMD_SVR_REG_REQ)
@@ -101,7 +152,7 @@ func (m *Server) scheRegister() error {
 	return nil
 }
 
-func (m *Server) timerOnce(to int64, typ string, ch interface{}, cmd interface{}) {
+func (m *Client) timerOnce(to int64, typ string, ch interface{}, cmd interface{}) {
 	t := time.NewTimer((time.Duration)((int64)(time.Second) * to))
 	<-t.C
 
@@ -114,75 +165,38 @@ func (m *Server) timerOnce(to int64, typ string, ch interface{}, cmd interface{}
 	}
 }
 
-func (m *Server) handleConnRead(client *clientConn) {
-	for {
-		// read package
-		// client.conn.Read
-	}
-}
-
-func (m *Server) handleConnWrite(client *clientConn) {
-	for {
-		select {
-		case msg := <-client.sendChan:
-			// send msg
-		}
-	}
-}
-
-func (m *Server) handleConn(client *clientConn) {
-	go m.handleConnRead(client)
-	go m.handleConnWrite(client)
-}
-
-func (m *Server) listening() {
-	for {
-		conn, err := m.listen.AcceptTCP()
-		if err != nil {
-			m.Log.Error("accept failed, err = %s\n", err)
-			continue
-		}
-		addr := conn.RemoteAddr()
-		m.Log.Info("accept new client, addr=%s\n", addr)
-		client := &clientConn{}
-
-		client.conn = conn
-		client.conStatus = true
-		client.regStatus = false
-		client.uptime = time.Now().UnixNano() / (1000 * 1000 * 1000)
-
-		m.clientQueue = append(m.clientQueue, client)
-
-		go m.handleConn(client)
-	}
-}
-
-func (m *Server) startListen() error {
-	listen, err := net.Listen("tcp", m.Host)
-	if err != nil {
-		return err
-	}
-	m.listen = (listen).(*net.TCPListener)
-
-	go m.listening()
-
-	return nil
-}
-
 // task represents exchange connect go routine
-func (m *Server) cmdTask() {
+func (m *Client) cmdTask() {
 	for {
 		cmd := <-m.cmdChan
 		switch cmd {
-		case "listen":
+		case "connect":
 			{
-				m.Log.Info("start to listen, addr = %s\n", m.Host)
-				err := m.startListen()
+				err := m.scheConnect()
 				if err != nil {
-					m.Log.Critical("listen failed, err = %s\n", err)
 					m.Stop()
+					return
+				}
+				m.cmdChan <- "register"
+			}
+		case "reconnect":
+			{
+				err := m.scheConnect()
+				if err != nil {
+					m.Log.Info("reconnect to addr=%s\n after 30 second",
+						m.Host)
+					go m.timerOnce(30, "schereconnect", m.cmdChan, "reconnect")
+					continue
+				}
+				m.cmdChan <- "register"
+			}
+		case "register":
+			{
+				err := m.scheRegister()
+				if err != nil {
+					// err
 				} else {
-					m.Log.Info("listen success, waiting for connection\n")
+					// post
 				}
 			}
 		case "stop":
@@ -193,7 +207,7 @@ func (m *Server) cmdTask() {
 	}
 }
 
-func (m *Server) sigTask() {
+func (m *Client) sigTask() {
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGUSR2, syscall.SIGUSR1)
 END:
@@ -223,7 +237,7 @@ END:
 }
 
 // initLog Setup Logger
-func (m *Server) initLog(prefix string) (err error) {
+func (m *Client) initLog(prefix string) (err error) {
 	m.Log, err = logging.NewLogging()
 	if err != nil {
 		return err
@@ -251,14 +265,20 @@ func (m *Server) initLog(prefix string) (err error) {
 }
 
 // parseArgs parse the commandline arguments
-func (m *Server) parseArgs() {
-	host := flag.String("l", "127.0.0.1:4421", "the scheduler server listen address")
+func (m *Client) parseArgs() {
+	host := flag.String("a", "", "the scheduler server host, format: ip:port")
+	ecode := flag.Int64("e", 0, "show errors")
 	debug := flag.Bool("d", false, "run in debug model")
 	help := flag.Bool("h", false, "show the help message")
 
 	flag.Parse()
 	if *help {
 		flag.PrintDefaults()
+		os.Exit(0)
+	}
+	if *ecode > 0 {
+		e := NewError(uint32(*ecode))
+		fmt.Printf("%s\n", e.Error())
 		os.Exit(0)
 	}
 	if len(*host) == 0 {
@@ -284,43 +304,46 @@ func (m *Server) parseArgs() {
 
 }
 
-// InitServer init the client
-func (m *Server) InitServer() {
+// InitClient init the client
+func (m *Client) InitClient(hook ClientHook) error {
 	m.parseArgs()
 
-	err := m.initLog("scheduler")
+	if hook == nil {
+		return fmt.Errorf("client hook is nil")
+	}
+	if m.info = hook.HookInfo(); m.info == nil {
+		return fmt.Errorf("client hook call failed")
+	}
+
+	err := m.initLog(m.info.Name)
 	if err != nil {
-		fmt.Printf("init log failed. err=%s\n", err)
-		os.Exit(-1)
+		return fmt.Errorf("init log failed, err = %s", err)
 	}
 
 	m.cmdChan = make(chan string, 1024)
 	m.exitChan = make(chan struct{})
 
-	m.clientQueue = make([]*clientConn, 1024)
-
 	go m.sigTask()
 
 	m.Log.Info("start task go routine\n")
 	go m.cmdTask()
+
+	return nil
 }
 
-// ServerForever the client
-func (m *Server) ServerForever() {
-
-	m.cmdChan <- "listen"
-
-	m.Wait()
+// Start the client
+func (m *Client) Start() {
+	m.cmdChan <- "connect"
 }
 
 // Stop the client
-func (m *Server) Stop() {
+func (m *Client) Stop() {
 	m.Log.Stop()
 
 	m.exitChan <- struct{}{}
 }
 
 // Wait wait the client to stop
-func (m *Server) Wait() {
+func (m *Client) Wait() {
 	<-m.exitChan
 }
