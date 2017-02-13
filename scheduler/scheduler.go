@@ -91,6 +91,7 @@ END:
 		select {
 		case <-t:
 			{
+				s.log.Debug("timer check hearbeat\n")
 				if s.connQueue == nil || len(s.connQueue) == 0 {
 					continue END
 				}
@@ -103,6 +104,7 @@ END:
 						if diff > 30 {
 							if !v.regStatus {
 								// 30秒没注册，主动断开
+								s.log.Info("not reigster for 30s, disconnect, remote = %s\n", conn.RemoteAddress())
 								s.net.CloseConn(conn)
 								s.del(v)
 								continue

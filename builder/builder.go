@@ -71,14 +71,14 @@ func (b *builder) eventTask() {
 		switch {
 		case evt.EventType == mynet.EventConnectionError:
 			{
-				fmt.Printf("event error: local = %s, remote = %s\n",
+				b.log.Info("event error: local = %s, remote = %s\n",
 					conn.LocalAddress(), conn.RemoteAddress())
 				b.cmdChan <- "reconnect"
 				return
 			}
 		case evt.EventType == mynet.EventConnectionClosed:
 			{
-				fmt.Printf("event close: local = %s, remote = %s\n",
+				b.log.Info("event close: local = %s, remote = %s\n",
 					conn.LocalAddress(), conn.RemoteAddress())
 				b.cmdChan <- "reconnect"
 				return
