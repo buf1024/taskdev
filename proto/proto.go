@@ -35,7 +35,7 @@ type TaskProto struct {
 
 const (
 	// KMessageHeadLen 协议头长度
-	KMessageHeadLen uint32 = 20
+	KMessageHeadLen uint32 = 8
 )
 
 const (
@@ -122,7 +122,7 @@ func NewProto() *TaskProto {
 
 func Debug(msg *Message) string {
 	return fmt.Sprintf("command:0x%x\nlength :%d\n==========\n%s",
-		msg.Head.Length, msg.Head.Command, pb.CompactTextString(msg.Body))
+		msg.Head.Command, msg.Head.Length, pb.MarshalTextString(msg.Body))
 }
 
 func GetMessage(command uint32) (pb.Message, error) {

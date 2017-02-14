@@ -22,6 +22,11 @@ import (
 // ServerTaskHandler the server handler
 type scheHandler func(conn *connState, msg *myproto.Message)
 
+type sessData struct {
+	conn *connState
+	msg  *myproto.Message
+}
+
 type connState struct {
 	conn      *mynet.Connection
 	conStatus bool
@@ -34,6 +39,7 @@ type scheServer struct {
 	listen  *mynet.Listener
 	log     *mylog.Log
 	handler map[uint32]scheHandler
+	sess    *util.Session
 
 	connQueue []*connState
 	queueLock sync.Locker
@@ -47,8 +53,26 @@ type scheServer struct {
 	host   string
 	logDir string
 	debug  bool
+
+	running bool
 }
 
+func (s *scheServer) addHandler() {
+
+	s.handler[myproto.KCmdHeartBeatReq] = s.handleHeartBeatReq
+	s.handler[myproto.KCmdRegisterReq] = s.handleRegisterReq
+}
+
+func (s *scheServer) handle(conn *connState, p *myproto.Message) error {
+	s.log.Info("handle:\n%s\n", myproto.Debug(p))
+	handler, ok := s.handler[p.Head.Command]
+	if !ok {
+		return fmt.Errorf("command 0x%x handler not found", p.Head.Command)
+	}
+	go handler(conn, p)
+
+	return nil
+}
 func (s *scheServer) add(con *connState) {
 	s.queueLock.Lock()
 	defer s.queueLock.Unlock()
@@ -68,20 +92,18 @@ func (s *scheServer) del(con *connState) {
 	}
 }
 
-func (s *scheServer) addHandler() {
-
-	//	b.handler[myproto.KCmdHeartBeatReq] = b.handleHeartBeatReq
-	//	b.handler[myproto.KCmdRegisterRsp] = b.handleRegisterRsp
-}
-
-func (s *scheServer) handle(conn *connState, p *myproto.Message) error {
-	handler, ok := s.handler[p.Head.Command]
-	if !ok {
-		return fmt.Errorf("command 0x%x handler not found", p.Head.Command)
+func (s *scheServer) sessionCheck() {
+	for {
+		t := time.NewTimer((time.Duration)((int64)(time.Second) * 30))
+		<-t.C
+		s.log.Debug("session check\n")
+		to := s.sess.GetTimeout(60)
+		for k, v := range to {
+			s.log.Warning("timeout sid = %s\n", k)
+			go s.handleTimeout(k, v)
+		}
 	}
-	go handler(conn, p)
 
-	return nil
 }
 
 func (s *scheServer) hearbeat() {
@@ -144,8 +166,11 @@ func (s *scheServer) eventTask() {
 	for {
 		evt, err := n.PollEvent(1000 * 60)
 		if err != nil {
-			fmt.Printf("poll event error!")
-			s.cmdChan <- "stop"
+			s.log.Error("poll event error!\n")
+			_, ok := <-s.cmdChan
+			if ok {
+				s.cmdChan <- "stop"
+			}
 			return
 		}
 		conn := evt.Conn
@@ -218,25 +243,33 @@ func (s *scheServer) cmdTask() {
 }
 
 func (s *scheServer) sigTask() {
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGUSR2, syscall.SIGUSR1)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGUSR2, syscall.SIGUSR1)
 END:
 	for {
 		select {
 		case sig := <-ch:
 			switch sig {
+			case syscall.SIGINT:
+				s.log.Info("catch SIGINT, stop the server.\n")
+				s.cmdChan <- "stop"
+				break END
+			case syscall.SIGQUIT:
+				s.log.Info("catch SIGQUIT, stop the server.\n")
+				s.cmdChan <- "stop"
+				break END
 			case syscall.SIGHUP:
-				s.log.Info("catch SIGHUP, stop the server.")
+				s.log.Info("catch SIGHUP, stop the server.\n")
 				s.cmdChan <- "stop"
 				break END
 			case syscall.SIGTERM:
-				s.log.Info("catch SIGTERM, stop the server.")
+				s.log.Info("catch SIGTERM, stop the server.\n")
 				s.cmdChan <- "stop"
 				break END
 			case syscall.SIGUSR1:
-				s.log.Info("catch SIGUSR1.")
+				s.log.Info("catch SIGUSR1.\n")
 			case syscall.SIGUSR2:
-				s.log.Info("catch SIGUSR2.")
+				s.log.Info("catch SIGUSR2.\n")
 				s.log.Sync()
 
 			}
@@ -316,16 +349,21 @@ func (s *scheServer) init() error {
 		return fmt.Errorf("init log failed, err = %s", err)
 	}
 
-	s.net = mynet.NewSimpleNet()
+	s.net = mynet.NewSimpleNet(s.log)
 	s.proto = myproto.NewProto()
 	s.queueLock = &sync.Mutex{}
+	s.handler = make(map[uint32]scheHandler)
+	s.sess = util.NewSession()
 
 	s.cmdChan = make(chan string, 1024)
 	s.exitChan = make(chan struct{})
 
+	s.addHandler()
+
 	go s.sigTask()
 	go s.eventTask()
 	go s.hearbeat()
+	go s.sessionCheck()
 
 	s.log.Info("start command task go routine\n")
 	go s.cmdTask()
@@ -336,21 +374,26 @@ func (s *scheServer) init() error {
 func (s *scheServer) server() {
 
 	s.cmdChan <- "listen"
+	s.running = true
 
 	s.wait()
 }
 
 func (s *scheServer) stop() {
-	close(s.cmdChan)
-	mynet.SimpleNetDestroy(s.net)
+	if s.running {
 
-	s.log.Stop()
+		close(s.cmdChan)
+		mynet.SimpleNetDestroy(s.net)
 
-	s.exitChan <- struct{}{}
+		s.log.Stop()
+
+		s.exitChan <- struct{}{}
+	}
 }
 
 func (s *scheServer) wait() {
 	<-s.exitChan
+	s.running = false
 }
 
 func main() {

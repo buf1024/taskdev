@@ -21,7 +21,7 @@ func GetSID(len int32) string {
 	rand.Read(sid)
 	s := ""
 	for _, v := range sid {
-		s = fmt.Sprintf("%s%x", s, v)
+		s = fmt.Sprintf("%s%02x", s, v)
 	}
 	return s
 }

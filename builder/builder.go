@@ -14,6 +14,7 @@ import (
 
 	mylog "github.com/buf1024/golib/logging"
 	mynet "github.com/buf1024/golib/net"
+	"github.com/golang/protobuf/proto"
 )
 
 type builder struct {
@@ -24,7 +25,7 @@ type builder struct {
 	conn     *connState
 	hostInfo *util.HostInfo
 
-	sessChan  chan struct{}
+	sess      *util.Session
 	timerChan chan struct{}
 	cmdChan   chan string
 	exitChan  chan struct{}
@@ -49,6 +50,7 @@ func (b *builder) addHandler() {
 }
 
 func (b *builder) handle(p *myproto.Message) error {
+	b.log.Info("handle:\n%s\n", myproto.Debug(p))
 	handler, ok := b.handler[p.Head.Command]
 	if !ok {
 		return fmt.Errorf("command 0x%x handler not found", p.Head.Command)
@@ -64,7 +66,10 @@ func (b *builder) eventTask() {
 		evt, err := n.PollEvent(1000 * 60)
 		if err != nil {
 			b.log.Error("poll event error!")
-			b.cmdChan <- "stop"
+			_, ok := <-b.cmdChan
+			if ok {
+				b.cmdChan <- "stop"
+			}
 			return
 		}
 		conn := evt.Conn
@@ -74,14 +79,12 @@ func (b *builder) eventTask() {
 				b.log.Info("event error: local = %s, remote = %s\n",
 					conn.LocalAddress(), conn.RemoteAddress())
 				b.cmdChan <- "reconnect"
-				return
 			}
 		case evt.EventType == mynet.EventConnectionClosed:
 			{
 				b.log.Info("event close: local = %s, remote = %s\n",
 					conn.LocalAddress(), conn.RemoteAddress())
 				b.cmdChan <- "reconnect"
-				return
 			}
 		case evt.EventType == mynet.EventNewConnectionData:
 			{
@@ -168,10 +171,11 @@ func (b *builder) init() error {
 		return fmt.Errorf("init log failed, err = %s", err)
 	}
 
-	b.net = mynet.NewSimpleNet()
+	b.net = mynet.NewSimpleNet(b.log)
 	b.proto = myproto.NewProto()
 	b.hostInfo = util.GetHostInfo()
 	b.handler = make(map[uint32]runnerHandler)
+	b.sess = util.NewSession()
 
 	b.cmdChan = make(chan string, 1024)
 	b.exitChan = make(chan struct{})
@@ -181,6 +185,7 @@ func (b *builder) init() error {
 	go b.sigTask()
 
 	go b.eventTask()
+	go b.sessionCheck()
 
 	b.log.Info("start command task go routine\n")
 
@@ -217,9 +222,9 @@ func (b *builder) cmdTask() {
 				b.conn = &connState{}
 				conn, err := b.net.Connect(b.host, b.proto)
 				if err != nil {
-					b.log.Info("reconnected %s failed, try after 30 second\n",
-						b.host)
-					go b.timerOnce(30, "reconnect", b.cmdChan, "reconnect")
+					b.log.Info("reconnect %s failed, err = %s, try after 15 second\n",
+						b.host, err)
+					go b.timerOnce(15, "reconnect", b.cmdChan, "reconnect")
 					continue
 				}
 				b.conn = &connState{
@@ -250,59 +255,82 @@ func (b *builder) cmdTask() {
 }
 
 func (b *builder) sigTask() {
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGUSR2, syscall.SIGUSR1)
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGQUIT, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGUSR2, syscall.SIGUSR1)
 END:
 	for {
 		select {
 		case sig := <-ch:
 			switch sig {
+			case syscall.SIGINT:
+				b.log.Info("catch SIGINT, stop the builder.\n")
+				b.cmdChan <- "stop"
+				break END
+			case syscall.SIGQUIT:
+				b.log.Info("catch SIGQUIT, stop the builder.\n")
+				b.cmdChan <- "stop"
+				break END
 			case syscall.SIGHUP:
-				b.log.Info("catch SIGHUP, stop the server.")
+				b.log.Info("catch SIGHUP, stop the builder.\n")
 				b.cmdChan <- "stop"
 				break END
 			case syscall.SIGTERM:
-				b.log.Info("catch SIGTERM, stop the server.")
+				b.log.Info("catch SIGTERM, stop the builder.\n")
 				b.cmdChan <- "stop"
 				break END
 			case syscall.SIGUSR1:
-				b.log.Info("catch SIGUSR1.")
+				b.log.Info("catch SIGUSR1.\n")
 			case syscall.SIGUSR2:
-				b.log.Info("catch SIGUSR2.")
+				b.log.Info("catch SIGUSR2.\n")
 				b.log.Sync()
 
 			}
 		}
 
 	}
-
 }
 
 func (b *builder) register() error {
-	// reg packet
-	// b.log.Info("reg to exch\n")
-	// msg, err := proto.Message(proto.CMD_SVR_REG_REQ)
-	// if err != nil {
-	// 	b.log.Critical("create message failed, ERR=%s\n", err.Error())
-	// 	return err
-	// }
+	m := &myproto.Message{}
+	m.Head.Command = myproto.KCmdRegisterReq
+	// beartbeat
+	p, err := myproto.GetMessage(m.Head.Command)
+	if err != nil {
+		b.log.Error("gen register failed, err = %s\n", err)
+		return err
+	}
+	reg := p.(*myproto.RegisterReq)
+	reg.SID = proto.String(util.GetSID(16))
+	reg.Type = proto.String("builder")
+	reg.OS = proto.String(b.hostInfo.OS)
+	reg.Host = proto.String(b.hostInfo.Host)
+	reg.Arch = proto.String(b.hostInfo.ARCH)
+	reg.Adress = b.hostInfo.Adress
 
-	// req := (*bankmsg.SvrRegReq)(msg)
-	// *req.SID = "123"
-	// *req.SvrType = bankid
-	// *req.SvrId = bankid
+	m.Body = reg
 
-	// reqMsg := &scheMsg{}
-	// reqMsg.conn = m.exchCtx.conn
-	// reqMsg.command = proto.CMD_SVR_REG_REQ
-	// reqMsg.message, err = proto.Serialize(req)
-	// if err != nil {
-	// 	b.log.Critical("serialize message failed, ERR=%s\n", err.Error())
-	// 	return err
-	// }
-
-	// return err
+	b.log.Info("REQ：\n%s\n", myproto.Debug(m))
+	err = b.net.SendData(b.conn.conn, m)
+	if err != nil {
+		b.log.Error("send register error, err = %s\n", err)
+		return err
+	}
+	b.sess.Add(reg.GetSID(), m)
 	return nil
+}
+
+func (b *builder) sessionCheck() {
+	for {
+		t := time.NewTimer((time.Duration)((int64)(time.Second) * 30))
+		<-t.C
+		b.log.Debug("session check\n")
+		to := b.sess.GetTimeout(60)
+		for k, v := range to {
+			b.log.Warning("timeout sid = %s\n", k)
+			go b.handleTimeout(k, v)
+		}
+	}
+
 }
 
 func (b *builder) timerOnce(to int64, typ string, ch interface{}, cmd interface{}) {
