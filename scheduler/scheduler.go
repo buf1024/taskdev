@@ -27,6 +27,23 @@ type sessData struct {
 	msg  *myproto.Message
 }
 
+const (
+	buildDaily = iota
+	buildSomeday
+	buildToday
+	buildNow
+)
+
+type buildScheData struct {
+	scheType int
+	someday  int
+	daySecs  int
+	stop     bool
+
+	conn *connState
+	task *util.TaskGroup
+}
+
 type connState struct {
 	conn      *mynet.Connection
 	conStatus bool
@@ -44,11 +61,9 @@ type scheServer struct {
 	connQueue []*connState
 	queueLock sync.Locker
 
-	sessChan  chan struct{}
-	timerChan chan struct{}
-
-	cmdChan  chan string
-	exitChan chan struct{}
+	cmdChan       chan string
+	exitChan      chan struct{}
+	buildScheChan chan *buildScheData
 
 	host   string
 	logDir string
@@ -357,6 +372,7 @@ func (s *scheServer) init() error {
 
 	s.cmdChan = make(chan string, 1024)
 	s.exitChan = make(chan struct{})
+	s.buildScheChan = make(chan *buildScheData, 1024)
 
 	s.addHandler()
 
@@ -364,6 +380,7 @@ func (s *scheServer) init() error {
 	go s.eventTask()
 	go s.hearbeat()
 	go s.sessionCheck()
+	go s.schedule()
 
 	s.log.Info("start command task go routine\n")
 	go s.cmdTask()
@@ -383,6 +400,7 @@ func (s *scheServer) stop() {
 	if s.running {
 
 		close(s.cmdChan)
+		close(s.buildScheChan)
 		mynet.SimpleNetDestroy(s.net)
 
 		s.log.Stop()
@@ -394,6 +412,31 @@ func (s *scheServer) stop() {
 func (s *scheServer) wait() {
 	<-s.exitChan
 	s.running = false
+}
+
+func (s *scheServer) addBuildTask(b *buildScheData) {
+	s.buildScheChan <- b
+}
+func (s *scheServer) stopBuildTask(b *buildScheData) {
+	b.stop = true
+}
+
+func (s *scheServer) schedule() {
+	for {
+		select {
+		case data, ok := <-s.buildScheChan:
+			if !ok {
+				return
+			}
+
+			for _, t := range data.task.Tasks {
+				s.log.Info("schedule build task, group=%s, name=%s\n",
+					t.Group.Name, t.Name)
+			}
+
+		}
+
+	}
 }
 
 func main() {

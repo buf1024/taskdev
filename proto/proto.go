@@ -43,6 +43,10 @@ const (
 	KCmdHeartBeatRsp uint32 = 0x00010002
 	KCmdRegisterReq  uint32 = 0x00010003
 	KCmdRegisterRsp  uint32 = 0x00010004
+	KCmdTaskBuildReq uint32 = 0x00010005
+	KCmdTaskBuildRsp uint32 = 0x00010006
+	KCmdTaskStateReq uint32 = 0x00010007
+	KCmdTaskStateRsp uint32 = 0x00010008
 )
 
 var message map[uint32]pb.Message
@@ -140,4 +144,8 @@ func init() {
 	message[KCmdHeartBeatRsp] = &HeartBeatRsp{} //0x00010002
 	message[KCmdRegisterReq] = &RegisterReq{}   //0x00010003
 	message[KCmdRegisterRsp] = &RegisterRsp{}   //0x00010004
+	message[KCmdTaskBuildReq] = &TaskBuildReq{} //0x00010005
+	message[KCmdTaskBuildRsp] = &TaskBuildRsp{} //0x00010006
+	message[KCmdTaskStateReq] = &TaskStateReq{} //0x00010007
+	message[KCmdTaskStateRsp] = &TaskStateRsp{} //0x00010008
 }

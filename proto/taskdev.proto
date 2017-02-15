@@ -22,4 +22,72 @@ message RegisterReq{
 message RegisterRsp{
   required int32 RetCode = 1;
   required string SID = 2;
+
+  message ServerInfo{
+    required string OS = 1;
+    required string Arch = 2;
+    required string Host = 3;
+    repeated string Adress = 4;
+    optional string BuildFtpHost = 5;
+    optional string BuildFtpUser = 6;
+    optional string BuildFtpPass = 7;
+  }
+  optional ServerInfo info = 3;
+}
+
+// 编译请求 0x00010005
+message TaskBuildReq{
+  required string SID = 1;
+  
+  message TaskBuild{
+    required string Name = 1;
+    optional string GroupName = 2;
+    required string Vcs = 3;
+	  required string Repos = 4;
+	  optional string ReposDir = 5;
+	  optional string User = 6;
+	  optional string Pass = 7;
+	  optional string PreBuildScript = 8;
+    optional string BuildScript = 9;
+    optional string PostBuildScript = 10;
+    repeated string OutBin = 11;
+    optional string OutFtpHost = 12;
+    optional string OutFtpUser = 13;
+    optional string OutFtpPass = 14;
+    optional string TestScript = 15;
+  }
+
+  repeated TaskBuild Task = 2;
+}
+
+// 编译应答 0x00010006
+message TaskBuildRsp{
+  required int32 RetCode = 1;
+  required string SID = 2;
+}
+
+// 编译状态请求 0x00010007
+message TaskStateReq{
+  required string SID = 1;
+  message TaskID{
+    required string TaskName = 1;
+    optional string TaskGroupName = 2;
+  }
+  repeated TaskID Task = 2;
+}
+// 编译状态应答 0x00010008
+message TaskStateRsp{
+  required int32 RetCode = 1;
+  required string SID = 2;
+
+  message TaskState{
+    required string TaskName = 1;
+    optional string TaskGroupName = 2;
+    required int32 BuildState = 3;
+    required string BuildLog = 4;
+    repeated string OutBin = 5;
+    optional string TestLog = 6;
+  }
+
+  repeated TaskState State = 3;
 }

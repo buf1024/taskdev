@@ -8,19 +8,20 @@ const (
 )
 
 type TaskGroup struct {
-	Version string
-
+	Name  string
 	Tasks []*Task
 }
 
 type Task struct {
+	Name        string
+	Group       *TaskGroup
 	VCS         string
 	Repository  string
 	ReposDir    string
 	User        string
 	Password    string
 	BuildScript string
-	OutBin      string
+	OutBin      []string
 	BuildLog    string
 }
 
