@@ -30,9 +30,10 @@ type builder struct {
 	cmdChan   chan string
 	exitChan  chan struct{}
 
-	host   string
-	logDir string
-	debug  bool
+	host     string
+	logDir   string
+	debug    bool
+	buildDir string
 }
 
 type runnerHandler func(*myproto.Message)
@@ -47,6 +48,9 @@ func (b *builder) addHandler() {
 
 	b.handler[myproto.KCmdHeartBeatReq] = b.handleHeartBeatReq
 	b.handler[myproto.KCmdRegisterRsp] = b.handleRegisterRsp
+	b.handler[myproto.KCmdTaskBuildReq] = b.handleTaskBuildReq
+	b.handler[myproto.KCmdTaskStateReq] = b.handleBuildStateReq
+
 }
 
 func (b *builder) handle(p *myproto.Message) error {
@@ -118,20 +122,30 @@ func (b *builder) parseArgs() {
 		os.Exit(-1)
 	}
 
-	dir := filepath.Dir(os.Args[0])
-	dir = dir + string(filepath.Separator) + "logs" + string(filepath.Separator)
+	pwd, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+	logDir := pwd + string(filepath.Separator) + "logs" + string(filepath.Separator)
+	buildDir := pwd + string(filepath.Separator) + "build" + string(filepath.Separator)
 
-	if _, err := os.Stat(dir); err != nil {
+	if _, err := os.Stat(logDir); err != nil {
 		if !os.IsNotExist(err) {
-			fmt.Printf("log dir %s don't have permission\n", dir)
+			fmt.Printf("log dir %s don't have permission\n", logDir)
 			os.Exit(-1)
 		}
-		os.Mkdir(dir, 0777)
+		os.Mkdir(logDir, 0777)
+	}
+
+	if _, err := os.Stat(buildDir); err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Printf("build dir %s don't have permission\n", buildDir)
+			os.Exit(-1)
+		}
+		os.Mkdir(buildDir, 0777)
 	}
 
 	b.host = *host
 	b.debug = *debug
-	b.logDir = dir
+	b.logDir = logDir
+	b.buildDir = buildDir
 
 }
 
@@ -355,6 +369,8 @@ func (b *builder) start() {
 func (b *builder) stop() {
 	close(b.cmdChan)
 	mynet.SimpleNetDestroy(b.net)
+	//		t := time.NewTimer((time.Duration)((int64)(time.Second) * 5))
+	//		<-t.C
 
 	b.log.Stop()
 

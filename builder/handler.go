@@ -55,3 +55,32 @@ func (b *builder) handleRegisterRsp(reqMsg *myproto.Message) {
 	b.sess.Del(reqPb.GetSID())
 	b.log.Info("success handle register\n")
 }
+
+func (b *builder) handleTaskBuildReq(reqMsg *myproto.Message) {
+	reqPb := reqMsg.Body.(*myproto.TaskBuildReq)
+	sid := reqPb.GetSID()
+	if b.sess.Get(sid) != nil {
+		return
+	}
+	b.sess.Add(sid, reqMsg)
+	defer b.sess.Del(sid)
+
+	tasks := reqPb.GetTask()
+	for _, task := range tasks {
+		go b.build(task)
+	}
+}
+func (b *builder) handleBuildStateReq(reqMsg *myproto.Message) {
+	reqPb := reqMsg.Body.(*myproto.RegisterRsp)
+	if reqPb.GetRetCode() != util.KESuccess {
+		b.log.Error("register failed, try to register again\n")
+		b.register()
+	} else {
+		if b.conn != nil && b.conn.conStatus {
+			b.conn.regStatus = true
+		}
+	}
+
+	b.sess.Del(reqPb.GetSID())
+	b.log.Info("success handle register\n")
+}

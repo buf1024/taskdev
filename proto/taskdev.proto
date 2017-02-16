@@ -41,20 +41,21 @@ message TaskBuildReq{
   
   message TaskBuild{
     required string Name = 1;
-    optional string GroupName = 2;
-    required string Vcs = 3;
-	  required string Repos = 4;
-	  optional string ReposDir = 5;
-	  optional string User = 6;
-	  optional string Pass = 7;
-	  optional string PreBuildScript = 8;
-    optional string BuildScript = 9;
-    optional string PostBuildScript = 10;
-    repeated string OutBin = 11;
-    optional string OutFtpHost = 12;
-    optional string OutFtpUser = 13;
-    optional string OutFtpPass = 14;
-    optional string TestScript = 15;
+    required string Version = 2;
+    optional string GroupName = 3;
+    required string Vcs = 4;
+	  required string Repos = 5;
+	  optional string ReposDir = 6;
+	  optional string User = 7;
+	  optional string Pass = 8;
+	  optional string PreBuildScript = 9;
+    optional string BuildScript = 10;
+    optional string PostBuildScript = 11;
+    repeated string OutBin = 12;
+    optional string OutFtpHost = 13;
+    optional string OutFtpUser = 14;
+    optional string OutFtpPass = 15;
+    optional string TestScript = 16;
   }
 
   repeated TaskBuild Task = 2;

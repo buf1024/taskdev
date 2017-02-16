@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"os/exec"
 	"runtime"
 	"time"
 )
@@ -48,6 +49,48 @@ func GetHostInfo() *HostInfo {
 	}
 
 	return info
+}
+
+func Run(exe string, args ...string) (errout string, out string, err error) {
+	cmd := exec.Command(exe, args...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", "", err
+
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", "", err
+	}
+	err = cmd.Start()
+	if err != nil {
+		return "", "", err
+	}
+	for {
+		buf := make([]byte, 1024)
+		n, err := stderr.Read(buf)
+		if n > 0 {
+			errout = fmt.Sprintf("%s%s", errout, (string)(buf))
+		}
+		if err != nil {
+			break
+		}
+	}
+	for {
+		buf := make([]byte, 1024)
+		n, err := stdout.Read(buf)
+		if n > 0 {
+			out = fmt.Sprintf("%s%s", out, (string)(buf))
+		}
+		if err != nil {
+			break
+		}
+	}
+	err = cmd.Wait()
+	if err != nil {
+		return "", "", err
+	}
+	return errout, out, nil
 }
 
 func init() {

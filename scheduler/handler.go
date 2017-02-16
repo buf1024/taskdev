@@ -58,3 +58,10 @@ func (s *scheServer) handleRegisterReq(conn *connState, reqMsg *myproto.Message)
 		s.log.Error("send server register, err = %s\n", err)
 	}
 }
+
+func (s *scheServer) handleTaskBuildRsp(conn *connState, reqMsg *myproto.Message) {
+
+}
+func (s *scheServer) handleTaskStateRsp(conn *connState, reqMsg *myproto.Message) {
+
+}

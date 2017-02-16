@@ -6,13 +6,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"taskdev/util"
 	"time"
 
 	myproto "taskdev/proto"
-
-	"sync"
 
 	mylog "github.com/buf1024/golib/logging"
 	mynet "github.com/buf1024/golib/net"
@@ -40,8 +39,9 @@ type buildScheData struct {
 	daySecs  int
 	stop     bool
 
-	conn *connState
-	task *util.TaskGroup
+	conn  *connState
+	task  *util.Task
+	tasks *util.TaskGroup
 }
 
 type connState struct {
@@ -76,6 +76,9 @@ func (s *scheServer) addHandler() {
 
 	s.handler[myproto.KCmdHeartBeatReq] = s.handleHeartBeatReq
 	s.handler[myproto.KCmdRegisterReq] = s.handleRegisterReq
+	s.handler[myproto.KCmdTaskBuildRsp] = s.handleTaskBuildRsp
+	s.handler[myproto.KCmdTaskStateRsp] = s.handleTaskStateRsp
+
 }
 
 func (s *scheServer) handle(conn *connState, p *myproto.Message) error {
@@ -267,8 +270,26 @@ END:
 			switch sig {
 			case syscall.SIGINT:
 				s.log.Info("catch SIGINT, stop the server.\n")
-				s.cmdChan <- "stop"
-				break END
+				//s.cmdChan <- "stop"
+				//break END
+				t := &util.Task{
+					Name:            "bank",
+					Vcs:             util.KVCSSvn,
+					Version:         "129624",
+					Repos:           "https://10.200.1.29:20443/JRTZXM/01-%E5%B9%BF%E8%B4%B5%E8%BF%90%E8%90%A5/02-%E4%BA%8C%E6%9C%9F%E4%BA%A4%E6%98%93%E7%B3%BB%E7%BB%9F/02-%E4%BB%A3%E7%A0%81/08-%E6%B8%85%E7%AE%97%E4%B8%AD%E5%BF%83%E4%BB%A3%E7%A0%81/03-%E9%93%B6%E8%A1%8C%E6%8E%A5%E5%8F%A3(%E6%B8%85%E7%AE%97%E4%B8%AD%E5%BF%83)/01-%E9%93%B6%E8%A1%8C%E6%9C%8D%E5%8A%A1/bank_svc",
+					ReposDir:        "src/bankcc_svronline",
+					User:            "luoguochun",
+					Pass:            "virtual2.",
+					PreBuildScript:  "#!/bin/sh\nls\necho PreBuildScript",
+					BuildScript:     "#!/bin/sh\npwd\nautoconf\nconfigure\ncd tsbase\nmake install",
+					PostBuildScript: "#!/bin/sh\nls\necho PostBuildScript",
+				}
+				b := &buildScheData{}
+				b.conn = s.connQueue[0]
+				b.task = t
+
+				s.addBuildTask(b)
+
 			case syscall.SIGQUIT:
 				s.log.Info("catch SIGQUIT, stop the server.\n")
 				s.cmdChan <- "stop"
@@ -339,8 +360,8 @@ func (s *scheServer) parseArgs() {
 		os.Exit(-1)
 	}
 
-	dir := filepath.Dir(os.Args[0])
-	dir = dir + string(filepath.Separator) + "logs" + string(filepath.Separator)
+	pwd, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+	dir := pwd + string(filepath.Separator) + "logs" + string(filepath.Separator)
 
 	if _, err := os.Stat(dir); err != nil {
 		if !os.IsNotExist(err) {
@@ -403,6 +424,9 @@ func (s *scheServer) stop() {
 		close(s.buildScheChan)
 		mynet.SimpleNetDestroy(s.net)
 
+		//		t := time.NewTimer((time.Duration)((int64)(time.Second) * 5))
+		//		<-t.C
+
 		s.log.Stop()
 
 		s.exitChan <- struct{}{}
@@ -412,31 +436,6 @@ func (s *scheServer) stop() {
 func (s *scheServer) wait() {
 	<-s.exitChan
 	s.running = false
-}
-
-func (s *scheServer) addBuildTask(b *buildScheData) {
-	s.buildScheChan <- b
-}
-func (s *scheServer) stopBuildTask(b *buildScheData) {
-	b.stop = true
-}
-
-func (s *scheServer) schedule() {
-	for {
-		select {
-		case data, ok := <-s.buildScheChan:
-			if !ok {
-				return
-			}
-
-			for _, t := range data.task.Tasks {
-				s.log.Info("schedule build task, group=%s, name=%s\n",
-					t.Group.Name, t.Name)
-			}
-
-		}
-
-	}
 }
 
 func main() {
