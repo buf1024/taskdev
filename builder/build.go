@@ -194,9 +194,8 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		}
 		buildLog = fmt.Sprintf("%sBUILD: prebuild %s\n", buildLog, preBuildName)
 		cmd := exec.Command(preBuildName)
+		cmd.Dir = buildDir
 		out, err := cmd.CombinedOutput()
-		cmd.Env = append(cmd.Env, fmt.Sprintf("PWD=%s", buildDir))
-		cmd.Env = append(cmd.Env, os.Environ()...)
 		b.log.Info("prebuild out:\n%s\n", out)
 		buildLog = fmt.Sprintf("%sBUILD: %s\n", buildLog, out)
 		if err != nil {
@@ -220,9 +219,7 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		}
 		buildLog = fmt.Sprintf("%sBUILD: build %s\n", buildLog, buildName)
 		cmd := exec.Command(buildName)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("PWD=%s", buildDir))
-		//cmd.Env = append(cmd.Env, os.Environ()...)
-		b.log.Debug("evn=%s\n", cmd.Env)
+		cmd.Dir = buildDir
 		out, err := cmd.CombinedOutput()
 		b.log.Info("build out:\n%s\n", out)
 		buildLog = fmt.Sprintf("%sBUILD: %s\n", buildLog, out)
@@ -247,8 +244,7 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		}
 		buildLog = fmt.Sprintf("%sBUILD: postbuild %s\n", buildLog, postBuildName)
 		cmd := exec.Command(postBuildName)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("PWD=%s", buildDir))
-		cmd.Env = append(cmd.Env, os.Environ()...)
+		cmd.Dir = buildDir
 		out, err := cmd.CombinedOutput()
 		b.log.Info("build out:\n%s\n", out)
 		buildLog = fmt.Sprintf("%sBUILD: %s\n", buildLog, out)

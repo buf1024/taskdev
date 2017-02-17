@@ -280,9 +280,9 @@ END:
 					ReposDir:        "src/bankcc_svronline",
 					User:            "luoguochun",
 					Pass:            "virtual2.",
-					PreBuildScript:  "#!/bin/sh\nls\necho PreBuildScript",
-					BuildScript:     "#!/bin/sh\npwd\nautoconf\nconfigure\ncd tsbase\nmake install",
-					PostBuildScript: "#!/bin/sh\nls\necho PostBuildScript",
+					PreBuildScript:  "",
+					BuildScript:     "#!/bin/sh\nautoconf\n./configure\ncd tsbase\nmake clean;make;make install\ncd -\ncd src/bankcc_svronline\nmake protoc;make clean;make;make install",
+					PostBuildScript: "",
 				}
 				b := &buildScheData{}
 				b.conn = s.connQueue[0]
