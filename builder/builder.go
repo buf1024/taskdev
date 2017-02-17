@@ -12,6 +12,8 @@ import (
 
 	myproto "taskdev/proto"
 
+	"sync"
+
 	mylog "github.com/buf1024/golib/logging"
 	mynet "github.com/buf1024/golib/net"
 	"github.com/golang/protobuf/proto"
@@ -30,10 +32,15 @@ type builder struct {
 	cmdChan   chan string
 	exitChan  chan struct{}
 
+	buildQueue     map[string]string
+	buildQueueLock sync.Locker
+
 	host     string
 	logDir   string
 	debug    bool
 	buildDir string
+	dbFile   string
+	db       *buildDb
 }
 
 type runnerHandler func(*myproto.Message)
@@ -125,6 +132,7 @@ func (b *builder) parseArgs() {
 	pwd, _ := filepath.Abs(filepath.Dir(os.Args[0]))
 	logDir := pwd + string(filepath.Separator) + "logs" + string(filepath.Separator)
 	buildDir := pwd + string(filepath.Separator) + "build" + string(filepath.Separator)
+	dbDir := pwd + string(filepath.Separator) + "db" + string(filepath.Separator)
 
 	if _, err := os.Stat(logDir); err != nil {
 		if !os.IsNotExist(err) {
@@ -141,12 +149,19 @@ func (b *builder) parseArgs() {
 		}
 		os.Mkdir(buildDir, 0777)
 	}
+	if _, err := os.Stat(dbDir); err != nil {
+		if !os.IsNotExist(err) {
+			fmt.Printf("build dir %s don't have permission\n", buildDir)
+			os.Exit(-1)
+		}
+		os.Mkdir(dbDir, 0777)
+	}
 
 	b.host = *host
 	b.debug = *debug
 	b.logDir = logDir
 	b.buildDir = buildDir
-
+	b.dbFile = dbDir + "buildtask.db"
 }
 
 func (b *builder) initLog(prefix string) (err error) {
@@ -180,7 +195,14 @@ func (b *builder) initLog(prefix string) (err error) {
 func (b *builder) init() error {
 	b.parseArgs()
 
-	err := b.initLog("builder")
+	var err error
+
+	b.db, err = NewBuildDb(b.dbFile)
+	if err != nil {
+		return err
+	}
+
+	err = b.initLog("builder")
 	if err != nil {
 		return fmt.Errorf("init log failed, err = %s", err)
 	}
@@ -193,6 +215,9 @@ func (b *builder) init() error {
 
 	b.cmdChan = make(chan string, 1024)
 	b.exitChan = make(chan struct{})
+
+	b.buildQueue = make(map[string]string)
+	b.buildQueueLock = &sync.Mutex{}
 
 	b.addHandler()
 
@@ -369,6 +394,7 @@ func (b *builder) start() {
 func (b *builder) stop() {
 	close(b.cmdChan)
 	mynet.SimpleNetDestroy(b.net)
+	BuildDbDestroy(b.db)
 	//		t := time.NewTimer((time.Duration)((int64)(time.Second) * 5))
 	//		<-t.C
 

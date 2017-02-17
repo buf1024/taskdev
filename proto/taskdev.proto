@@ -52,10 +52,6 @@ message TaskBuildReq{
     optional string BuildScript = 10;
     optional string PostBuildScript = 11;
     repeated string OutBin = 12;
-    optional string OutFtpHost = 13;
-    optional string OutFtpUser = 14;
-    optional string OutFtpPass = 15;
-    optional string TestScript = 16;
   }
 
   repeated TaskBuild Task = 2;
@@ -71,8 +67,9 @@ message TaskBuildRsp{
 message TaskStateReq{
   required string SID = 1;
   message TaskID{
-    required string TaskName = 1;
-    optional string TaskGroupName = 2;
+    required string Name = 1;
+    optional string GroupName = 2;
+    optional bool FetchAll = 3;
   }
   repeated TaskID Task = 2;
 }
@@ -82,12 +79,12 @@ message TaskStateRsp{
   required string SID = 2;
 
   message TaskState{
-    required string TaskName = 1;
-    optional string TaskGroupName = 2;
+    required string Name = 1;
+    optional string GroupName = 2;
     required int32 BuildState = 3;
-    required string BuildLog = 4;
-    repeated string OutBin = 5;
-    optional string TestLog = 6;
+    optional string BuildLog = 4;
+    optional string OutBin = 5;
+    optional string BuildTime = 6;
   }
 
   repeated TaskState State = 3;

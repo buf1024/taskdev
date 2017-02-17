@@ -5,7 +5,10 @@ import (
 )
 
 const (
-	KESuccess int32 = 99999 - iota
+	KESuccess    int32 = 99999
+	KEError      int32 = -99999
+	KENotfound   int32 = -99998
+	KEBuildExist int32 = -99997
 )
 
 type TaskDevError struct {
@@ -31,5 +34,6 @@ func init() {
 	err = make(map[int32]string)
 
 	err[KESuccess] = "处理成功"
+	err[KENotfound] = "查无记录"
 
 }

@@ -32,12 +32,20 @@ const (
 	buildToday
 	buildNow
 )
+const (
+	buildTypeBuild = iota
+	buildTypeQuery
+)
 
 type buildScheData struct {
+	buildtype int
+
 	scheType int
 	someday  int
 	daySecs  int
 	stop     bool
+
+	queryAll bool
 
 	conn  *connState
 	task  *util.Task
@@ -287,7 +295,15 @@ END:
 				b := &buildScheData{}
 				b.conn = s.connQueue[0]
 				b.task = t
+				b.buildtype = buildTypeBuild
+				s.addBuildTask(b)
 
+				time.Sleep(time.Second * 2)
+				b = &buildScheData{}
+				b.conn = s.connQueue[0]
+				b.task = t
+				b.buildtype = buildTypeQuery
+				b.queryAll = true
 				s.addBuildTask(b)
 
 			case syscall.SIGQUIT:

@@ -12,6 +12,25 @@ import (
 	"time"
 )
 
+func (b *builder) addBuild(key string) {
+	b.buildQueueLock.Lock()
+	defer b.buildQueueLock.Unlock()
+	b.buildQueue[key] = key
+}
+func (b *builder) delBuild(key string) {
+	b.buildQueueLock.Lock()
+	defer b.buildQueueLock.Unlock()
+	if _, ok := b.buildQueue[key]; ok {
+		delete(b.buildQueue, key)
+	}
+}
+func (b *builder) checkBuild(key string) bool {
+	b.buildQueueLock.Lock()
+	defer b.buildQueueLock.Unlock()
+	_, ok := b.buildQueue[key]
+	return ok
+}
+
 func (b *builder) getSvnCode(m *myproto.TaskBuildReq_TaskBuild, buildDir string, buildLog string) (string, string, error) {
 	version := m.GetVersion()
 	repos := m.GetRepos()
@@ -91,9 +110,20 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 	groupName := m.GetGroupName()
 	version := m.GetVersion()
 
+	b.addBuild(fmt.Sprintf("%s-%s", groupName, name))
+
+	outbin := m.GetOutBin()
+
 	buildLog := ""
 	buildLogDir := ""
 	buildScriptDir := ""
+
+	st := &buildState{
+		groupname: groupName,
+		name:      name,
+		state:     0,
+	}
+
 	defer func() {
 		buildLog = fmt.Sprintf("%sBUILD: DONE!\n", buildLog)
 		n := time.Now()
@@ -115,7 +145,12 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		fileName = buildLogDir + fileName
 		ioutil.WriteFile(fileName, ([]byte)(buildLog), 0644)
 
-		fmt.Printf("buildLog:%s\n", buildLog)
+		st.log = fileName
+
+		b.db.insert(st)
+
+		b.delBuild(fmt.Sprintf("%s-%s", groupName, name))
+
 	}()
 
 	b.log.Info("start to build task, g=%s, n=%s, v=%s\n",
@@ -149,6 +184,13 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		os.Mkdir(buildScriptDir, 0777)
 	}
 
+	for _, v := range outbin {
+		if len(st.outbin) != 0 {
+			st.outbin = st.outbin + ";"
+		}
+		st.outbin = buildDir + st.outbin + v
+	}
+
 	vcs := m.GetVcs()
 	switch {
 	case vcs == util.KVCSSvn:
@@ -158,8 +200,10 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 			if err != nil {
 				b.log.Debug("getSvnCode failed, err = %s\n", err)
 				buildLog = fmt.Sprintf("%sBUILD: FAILED %s\n", buildLog, err)
+				st.state = buildStateBuildFailed
 				return
 			}
+			b.log.Debug("get svn code done\n")
 		}
 	}
 	preBuildScript := m.GetPreBuildScript()
@@ -181,6 +225,7 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 	preBuildName := buildScriptCommonName
 
 	if len(preBuildScript) > 0 {
+		b.log.Debug("start prebuild\n")
 		if buildCmmNameLen > 0 {
 			preBuildName = buildScriptDir + preBuildName + "-prebuild.sh"
 		} else {
@@ -190,6 +235,8 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		if err != nil {
 			b.log.Error("create prebuild script failed.\n")
 			buildLog = fmt.Sprintf("%sBUILD: FAILED %s\n", buildLog, err)
+			st.state = buildStateBuildFailed
+
 			return
 		}
 		buildLog = fmt.Sprintf("%sBUILD: prebuild %s\n", buildLog, preBuildName)
@@ -201,11 +248,17 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		if err != nil {
 			b.log.Error("build error, err = %s\n", err)
 			buildLog = fmt.Sprintf("%sBUILD: %s\n", buildLog, err)
+			st.state = buildStateBuildFailed
+
 			return
 		}
+		b.log.Debug("prebuild done\n")
+
 	}
 	buildName := buildScriptCommonName
 	if len(buildScript) > 0 {
+		b.log.Debug("start build\n")
+
 		if buildCmmNameLen > 0 {
 			buildName = buildScriptDir + buildName + "-build.sh"
 		} else {
@@ -215,6 +268,8 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		if err != nil {
 			b.log.Error("create prebuild script failed.\n")
 			buildLog = fmt.Sprintf("%sBUILD: FAILED %s\n", buildLog, err)
+			st.state = buildStateBuildFailed
+
 			return
 		}
 		buildLog = fmt.Sprintf("%sBUILD: build %s\n", buildLog, buildName)
@@ -226,11 +281,17 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		if err != nil {
 			b.log.Error("build error, err = %s\n", err)
 			buildLog = fmt.Sprintf("%sBUILD: %s\n", buildLog, err)
+			st.state = buildStateBuildFailed
+
 			return
 		}
+		b.log.Debug("build done\n")
+
 	}
 	postBuildName := buildScriptCommonName
 	if len(postBuildScript) > 0 {
+		b.log.Debug("start postbuild\n")
+
 		if buildCmmNameLen > 0 {
 			postBuildName = buildScriptDir + postBuildName + "-postbuild.sh"
 		} else {
@@ -240,6 +301,8 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		if err != nil {
 			b.log.Error("create prebuild script failed.\n")
 			buildLog = fmt.Sprintf("%sBUILD: FAILED %s\n", buildLog, err)
+			st.state = buildStateBuildFailed
+
 			return
 		}
 		buildLog = fmt.Sprintf("%sBUILD: postbuild %s\n", buildLog, postBuildName)
@@ -251,8 +314,15 @@ func (b *builder) build(m *myproto.TaskBuildReq_TaskBuild) {
 		if err != nil {
 			b.log.Error("build error, err = %s\n", err)
 			buildLog = fmt.Sprintf("%sBUILD: %s\n", buildLog, err)
+			st.state = buildStateBuildFailed
+
 			return
 		}
+		b.log.Debug("postbuild done\n")
+
 	}
+
+	st.state = buildStateBuildSuccess
+	b.log.Debug("all build done\n")
 
 }

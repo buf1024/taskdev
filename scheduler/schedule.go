@@ -40,10 +40,6 @@ func (s *scheServer) sendBuildTask(b *buildScheData) error {
 			tpb.BuildScript = proto.String(t.BuildScript)
 			tpb.PostBuildScript = proto.String(t.PostBuildScript)
 			tpb.OutBin = t.OutBin
-			tpb.OutFtpHost = proto.String(t.OutFtpHost)
-			tpb.OutFtpUser = proto.String(t.OutFtpUser)
-			tpb.OutFtpPass = proto.String(t.OutFtpPass)
-			tpb.TestScript = proto.String(t.TestScript)
 
 			tasks = append(tasks, tpb)
 		}
@@ -65,11 +61,51 @@ func (s *scheServer) sendBuildTask(b *buildScheData) error {
 		tpb.BuildScript = proto.String(t.BuildScript)
 		tpb.PostBuildScript = proto.String(t.PostBuildScript)
 		tpb.OutBin = t.OutBin
-		tpb.OutFtpHost = proto.String(t.OutFtpHost)
-		tpb.OutFtpUser = proto.String(t.OutFtpUser)
-		tpb.OutFtpPass = proto.String(t.OutFtpPass)
-		tpb.TestScript = proto.String(t.TestScript)
 
+		tasks = append(tasks, tpb)
+	}
+
+	pb.Task = tasks
+
+	reqMsg.Body = reqPb
+	s.log.Info("REQ：\n%s\n", myproto.Debug(reqMsg))
+	err = s.net.SendData(b.conn.conn, reqMsg)
+	if err != nil {
+		s.log.Error("send TaskBuildReq, err = %s\n", err)
+		return err
+	}
+	return nil
+}
+
+func (s *scheServer) sendBuildQueryTask(b *buildScheData) error {
+	reqMsg := &myproto.Message{}
+	reqMsg.Head.Command = myproto.KCmdTaskStateReq
+	reqPb, err := myproto.GetMessage(reqMsg.Head.Command)
+	if err != nil {
+		s.log.Error("gen KCmdTaskStateReq failed, err = %s\n", err)
+		return err
+	}
+	pb := reqPb.(*myproto.TaskStateReq)
+	pb.SID = proto.String(util.GetSID(16))
+
+	var tasks []*myproto.TaskStateReq_TaskID
+	if b.tasks != nil {
+		for _, t := range b.tasks.Tasks {
+			tpb := &myproto.TaskStateReq_TaskID{}
+			tpb.Name = proto.String(t.Name)
+			tpb.GroupName = proto.String(b.tasks.Name)
+			tpb.FetchAll = proto.Bool(b.queryAll)
+			tasks = append(tasks, tpb)
+		}
+	}
+	if b.task != nil {
+		t := b.task
+		tpb := &myproto.TaskStateReq_TaskID{}
+		tpb.Name = proto.String(t.Name)
+		if b.task.Group != nil {
+			tpb.GroupName = proto.String(b.task.Group.Name)
+		}
+		tpb.FetchAll = proto.Bool(b.queryAll)
 		tasks = append(tasks, tpb)
 	}
 
@@ -92,8 +128,12 @@ func (s *scheServer) schedule() {
 			if !ok {
 				return
 			}
-
-			s.sendBuildTask(data)
+			switch data.buildtype {
+			case buildTypeBuild:
+				s.sendBuildTask(data)
+			case buildTypeQuery:
+				s.sendBuildQueryTask(data)
+			}
 
 		}
 
