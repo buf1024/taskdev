@@ -83,6 +83,8 @@ type scheServer struct {
 func (s *scheServer) addHandler() {
 
 	s.handler[myproto.KCmdHeartBeatReq] = s.handleHeartBeatReq
+	s.handler[myproto.KCmdHeartBeatRsp] = s.handleHeartBeatRsp
+
 	s.handler[myproto.KCmdRegisterReq] = s.handleRegisterReq
 	s.handler[myproto.KCmdTaskBuildRsp] = s.handleTaskBuildRsp
 	s.handler[myproto.KCmdTaskStateRsp] = s.handleTaskStateRsp

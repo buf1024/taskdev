@@ -34,6 +34,8 @@ func (s *scheServer) handleHeartBeatReq(conn *connState, reqMsg *myproto.Message
 	}
 
 }
+func (s *scheServer) handleHeartBeatRsp(conn *connState, reqMsg *myproto.Message) {
+}
 
 func (s *scheServer) handleRegisterReq(conn *connState, reqMsg *myproto.Message) {
 	reqPb := reqMsg.Body.(*myproto.RegisterReq)
